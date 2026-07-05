@@ -217,6 +217,13 @@
       margin-bottom: 4px;
     }
 
+    .cal-note {
+      font-size: 0.6rem;
+      font-style: italic;
+      line-height: 1.25;
+      color: var(--muted);
+    }
+
     /* ── EVENTS & TOOLTIPS ── */
     .event-wrap { position: relative; }
 
@@ -250,7 +257,7 @@
     .tooltip {
       display: none;
       position: absolute;
-      top: calc(100% + 6px);
+      top: 100%;
       left: 0;
       z-index: 200;
       background: var(--royal-dk);
@@ -264,7 +271,6 @@
       min-width: 190px;
       max-width: 250px;
       box-shadow: 0 4px 16px rgba(0,0,0,0.25);
-      pointer-events: none;
     }
 
     .tooltip::before {
@@ -296,6 +302,22 @@
       font-size: 0.67rem;
       color: rgba(255,255,255,0.65);
     }
+
+    .tooltip .tt-links {
+      display: flex;
+      gap: 12px;
+      margin-top: 7px;
+      padding-top: 7px;
+      border-top: 1px solid rgba(255,255,255,0.18);
+      pointer-events: auto;
+    }
+    .tooltip .tt-links a {
+      color: var(--white);
+      font-size: 0.68rem;
+      font-weight: 600;
+      text-decoration: underline;
+    }
+    .tooltip .tt-links a:hover { color: rgba(255,255,255,0.75); }
 
     .event-wrap:hover .tooltip { display: block; }
 
@@ -357,6 +379,19 @@
     .upcoming-info { flex: 1; }
     .upcoming-info .title { font-size: 0.88rem; font-weight: 600; color: var(--text); }
     .upcoming-info .meta { font-size: 0.73rem; color: var(--muted); margin-top: 2px; }
+
+    .upcoming-links {
+      display: flex;
+      gap: 14px;
+      margin-top: 7px;
+    }
+    .upcoming-links a {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .upcoming-links a:hover { text-decoration: underline; }
 
     .badge {
       font-size: 0.58rem;
@@ -452,6 +487,11 @@
     <h3>Upcoming Meetings</h3>
     <div class="upcoming-list" id="upcoming-list"></div>
   </div>
+
+  <div class="upcoming">
+    <h3>Past Meetings</h3>
+    <div class="upcoming-list" id="past-list"></div>
+  </div>
 </main>
 
 <footer>
@@ -464,16 +504,72 @@
   const MONTHS_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   const DAYS         = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
-  // ── SPECIAL ONE-OFF MEETINGS ─────────────────────────────────
-  const specialMeetings = [
-    { y: 2025, m: 5, d: 24, label: "Special Session",                                            type: "special", location: "School Cafeteria" },
-    { y: 2026, m: 6, d: 15, label: "Special Session: Vision Statement & Strategic Plan Review",  type: "special", location: "TBD (Parish Social Hall pending confirmation)" },
+  // ── CONFIRMED MEETINGS (verified against stmarysll.org/about/school-advisory-council.cfm) ──
+  // These carry real agenda/minutes links. Regular-meeting entries here also override the
+  // "4th Wednesday" auto-generation below for their month, since the school has posted at
+  // least one exception (April 2026 met on the 3rd Wednesday, not the 4th).
+  const confirmedMeetings = [
+    { y: 2026, m: 3, d: 15, label: "Regular Meeting", type: "regular", location: "School Cafeteria",
+      agenda:  "https://www.stmarysll.org/editoruploads/files/SAC%20Agenda%204-15-26.pdf",
+      minutes: "https://www.stmarysll.org/editoruploads/files/SAC_2026-04-15_Minutes_FINAL.pdf" },
+    { y: 2026, m: 4, d: 6, label: "Special Session", type: "special", location: "See agenda for location",
+      agenda:  "https://www.stmarysll.org/editoruploads/files/SAC/SAC%202026-05-06%20SpecialSession%20Agenda.pdf",
+      minutes: "https://www.stmarysll.org/editoruploads/files/SAC_2026-05-06_Minutes_FINAL.pdf" },
+    { y: 2026, m: 4, d: 27, label: "Regular Meeting", type: "regular", location: "School Cafeteria",
+      agenda:  "https://www.stmarysll.org/editoruploads/files/SAC%202026-05-27%20Meeting%20Agenda.pdf" },
+    { y: 2026, m: 5, d: 16, label: "Special Session", type: "special", location: "See agenda for location",
+      agenda:  "https://www.stmarysll.org/editoruploads/files/SAC_2026-06-16_SpecialSession_Agenda.pdf" },
   ];
 
-  // ── 4TH WEDNESDAY REGULAR MEETINGS ──────────────────────────
+  // ── SPECIAL ONE-OFF MEETINGS ─────────────────────────────────
+  const specialMeetings = [
+    { y: 2026, m: 6, d: 15, label: "Special Session: Vision Statement & Strategic Plan Review",  type: "special", location: "TBD (Parish Social Hall pending confirmation)" },
+    ...confirmedMeetings.filter(e => e.type === "special"),
+  ];
+
+  // ── RESCHEDULED MEETINGS ─────────────────────────────────────
+  // A meeting moved from one date to another. The original date shows a
+  // "moved" notice instead of a pill; the new date carries the actual
+  // meeting, agenda/minutes links, and a back-reference note.
+  const rescheduledMeetings = [
+    {
+      from: { y: 2026, m: 5, d: 24 },
+      to:   { y: 2026, m: 6, d: 1 },
+      label: "Regular Meeting",
+      type: "regular",
+      location: "School Cafeteria",
+      agenda: "https://www.stmarysll.org/editoruploads/files/SAC_2026-06-24_Agenda.pdf",
+    },
+  ];
+
+  function keyOf(y, m, d) { return `${y}-${m}-${d}`; }
+  function shortDate(y, m, d) { return `${m + 1}/${d}/${String(y).slice(-2)}`; }
+
+  // The council's inaugural meeting — no records exist before this date.
+  const FIRST_MEETING_DATE = new Date(2026, 3, 15);
+
+  // Notices rendered directly on a calendar cell with no meeting of its own (no pill, no link).
+  const calendarNotices = {};
+  rescheduledMeetings.forEach(r => {
+    calendarNotices[keyOf(r.from.y, r.from.m, r.from.d)] =
+      `Meeting moved to ${shortDate(r.to.y, r.to.m, r.to.d)}`;
+  });
+
+  // ── 4TH WEDNESDAY REGULAR MEETINGS (auto-generated) ──────────
+  // Skipped for months with either (a) a confirmed override above with a real date in the
+  // same month, or (b) a meeting rescheduled out of that month entirely.
+  const confirmedRegularMonths = new Set(
+    confirmedMeetings.filter(e => e.type === "regular").map(e => `${e.y}-${e.m}`)
+  );
+  const suppressedRegularMonths = new Set(
+    rescheduledMeetings.map(r => `${r.from.y}-${r.from.m}`)
+  );
+
   function getFourthWednesdays(year) {
     const results = [];
     for (let m = 0; m < 12; m++) {
+      const monthKey = `${year}-${m}`;
+      if (confirmedRegularMonths.has(monthKey) || suppressedRegularMonths.has(monthKey)) continue;
       let count = 0;
       for (let d = 1; d <= 31; d++) {
         const dt = new Date(year, m, d);
@@ -488,19 +584,25 @@
   }
 
   const today = new Date();
+  const isOnOrAfterInaugural = e => new Date(e.y, e.m, e.d) >= FIRST_MEETING_DATE;
+
   const regularMeetings = [
     ...getFourthWednesdays(today.getFullYear() - 1),
     ...getFourthWednesdays(today.getFullYear()),
     ...getFourthWednesdays(today.getFullYear() + 1),
-  ];
-
-  function keyOf(y, m, d) { return `${y}-${m}-${d}`; }
+    ...confirmedMeetings.filter(e => e.type === "regular"),
+    ...rescheduledMeetings.map(r => ({
+      y: r.to.y, m: r.to.m, d: r.to.d, label: r.label, type: r.type,
+      location: r.location, agenda: r.agenda, minutes: r.minutes,
+      note: `Rescheduled from ${MONTHS[r.from.m]} ${r.from.d}, ${r.from.y}`,
+    })),
+  ].filter(isOnOrAfterInaugural);
 
   const regularMap = {};
   regularMeetings.forEach(e => { regularMap[keyOf(e.y, e.m, e.d)] = e; });
 
   const specialMap = {};
-  specialMeetings.forEach(e => { specialMap[keyOf(e.y, e.m, e.d)] = e; });
+  specialMeetings.filter(isOnOrAfterInaugural).forEach(e => { specialMap[keyOf(e.y, e.m, e.d)] = e; });
 
   // ── RENDER ───────────────────────────────────────────────────
   let viewYear  = today.getFullYear();
@@ -549,16 +651,32 @@
       const ev     = specialMap[key] || regularMap[key];
 
       if (ev) {
-        const isSpecial = ev.type === "special";
+        const isSpecial   = ev.type === "special";
+        const primaryLink = ev.agenda || ev.minutes || null;
         cell.classList.add("has-event");
         if (isSpecial) cell.classList.add("has-special");
 
         const wrap = document.createElement("div");
         wrap.className = "event-wrap";
 
-        const pill = document.createElement("div");
+        const pill = document.createElement(primaryLink ? "a" : "div");
         pill.className = `event ${isSpecial ? "event-special" : "event-regular"}`;
         pill.textContent = isSpecial ? "Special Session" : "Regular Meeting";
+        if (primaryLink) {
+          pill.href = primaryLink;
+          pill.target = "_blank";
+          pill.rel = "noopener";
+          pill.style.textDecoration = "none";
+          pill.style.cursor = "pointer";
+        }
+
+        const linksHtml = (ev.agenda || ev.minutes) ? `
+          <div class="tt-links">
+            ${ev.agenda  ? `<a href="${ev.agenda}" target="_blank" rel="noopener">Agenda &#8599;</a>`   : ""}
+            ${ev.minutes ? `<a href="${ev.minutes}" target="_blank" rel="noopener">Minutes &#8599;</a>` : ""}
+          </div>` : "";
+
+        const noteHtml = ev.note ? `<div class="tt-time" style="margin-top:3px;font-style:italic;">${ev.note}</div>` : "";
 
         const tip = document.createElement("div");
         tip.className = "tooltip";
@@ -567,17 +685,77 @@
           <div class="tt-title">${ev.label}</div>
           <div class="tt-time">${DAYS[new Date(y, m, d).getDay()]}, ${MONTHS[m]} ${d}, ${y} &mdash; 6:30 PM</div>
           <div class="tt-time" style="margin-top:3px;">&#128205; ${ev.location}</div>
+          ${noteHtml}
+          ${linksHtml}
         `;
 
         wrap.appendChild(pill);
         wrap.appendChild(tip);
         cell.appendChild(wrap);
+
+        // Let clicking anywhere on the date cell (not just the pill) open the agenda —
+        // covers mobile, where the pill itself is hidden and only a dot indicator shows.
+        if (primaryLink) {
+          cell.style.cursor = "pointer";
+          cell.addEventListener("click", (evt) => {
+            if (evt.target.closest("a")) return; // links handle their own click
+            window.open(primaryLink, "_blank", "noopener");
+          });
+        }
+      } else if (calendarNotices[key]) {
+        const note = document.createElement("div");
+        note.className = "cal-note";
+        note.textContent = calendarNotices[key];
+        cell.appendChild(note);
       }
 
       body.appendChild(cell);
     }
 
     renderUpcoming();
+    renderPast();
+  }
+
+  // Shared list-item builder used by both the Upcoming and Past Meetings panels.
+  function buildMeetingItem(e) {
+    const dt      = new Date(e.y, e.m, e.d);
+    const dayName = DAYS[dt.getDay()];
+    const isSpec  = e.type === "special";
+
+    const noteHtml = e.note ? `<div class="meta" style="font-style:italic;margin-top:2px;">${e.note}</div>` : "";
+
+    const linksHtml = (e.agenda || e.minutes) ? `
+      <div class="upcoming-links">
+        ${e.agenda  ? `<a href="${e.agenda}" target="_blank" rel="noopener">Agenda &#8599;</a>`   : ""}
+        ${e.minutes ? `<a href="${e.minutes}" target="_blank" rel="noopener">Minutes &#8599;</a>` : ""}
+      </div>` : "";
+
+    const item = document.createElement("div");
+    item.className = `upcoming-item${isSpec ? " is-special" : ""}`;
+    item.innerHTML = `
+      <div class="upcoming-date">
+        <div class="month">${MONTHS_SHORT[e.m]}</div>
+        <div class="day">${e.d}</div>
+      </div>
+      <div class="upcoming-info">
+        <div class="title">${e.label}</div>
+        <div class="meta">${dayName}, ${MONTHS[e.m]} ${e.d}, ${e.y} &mdash; 6:30 PM</div>
+        <div class="meta" style="margin-top:2px;">&#128205; ${e.location}</div>
+        ${noteHtml}
+        <span class="badge ${isSpec ? "badge-special" : "badge-regular"}">${isSpec ? "Special Session" : "Regular"}</span>
+        ${linksHtml}
+      </div>
+    `;
+    return item;
+  }
+
+  function allKnownEvents() {
+    return [...regularMeetings, ...specialMeetings].filter(e => {
+      if (!isOnOrAfterInaugural(e)) return false; // no records before the inaugural meeting
+      // Avoid double-counting if a regular date ever coincides with a special one.
+      if (e.type === "regular" && specialMap[keyOf(e.y, e.m, e.d)]) return false;
+      return true;
+    });
   }
 
   function renderUpcoming() {
@@ -587,42 +765,38 @@
     const now = new Date();
     now.setHours(0, 0, 0, 0);
 
-    const allEvents = [
-      ...regularMeetings,
-      ...specialMeetings,
-    ].filter(e => {
-      if (e.type === "regular" && specialMap[keyOf(e.y, e.m, e.d)]) return false;
-      return new Date(e.y, e.m, e.d) >= now;
-    }).sort((a, b) => new Date(a.y, a.m, a.d) - new Date(b.y, b.m, b.d));
+    const upcoming = allKnownEvents()
+      .filter(e => new Date(e.y, e.m, e.d) >= now)
+      .sort((a, b) => new Date(a.y, a.m, a.d) - new Date(b.y, b.m, b.d))
+      .slice(0, 4);
 
-    const next5 = allEvents.slice(0, 5);
-
-    if (!next5.length) {
+    if (!upcoming.length) {
       list.innerHTML = "<p style='color:var(--muted);font-size:.85rem;'>No upcoming meetings found.</p>";
       return;
     }
 
-    next5.forEach(e => {
-      const dt      = new Date(e.y, e.m, e.d);
-      const dayName = DAYS[dt.getDay()];
-      const isSpec  = e.type === "special";
+    upcoming.forEach(e => list.appendChild(buildMeetingItem(e)));
+  }
 
-      const item = document.createElement("div");
-      item.className = `upcoming-item${isSpec ? " is-special" : ""}`;
-      item.innerHTML = `
-        <div class="upcoming-date">
-          <div class="month">${MONTHS_SHORT[e.m]}</div>
-          <div class="day">${e.d}</div>
-        </div>
-        <div class="upcoming-info">
-          <div class="title">${e.label}</div>
-          <div class="meta">${dayName}, ${MONTHS[e.m]} ${e.d}, ${e.y} &mdash; 6:30 PM</div>
-          <div class="meta" style="margin-top:2px;">&#128205; ${e.location}</div>
-          <span class="badge ${isSpec ? "badge-special" : "badge-regular"}">${isSpec ? "Special Session" : "Regular"}</span>
-        </div>
-      `;
-      list.appendChild(item);
-    });
+  function renderPast() {
+    const list = document.getElementById("past-list");
+    list.innerHTML = "";
+
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+
+    const past = allKnownEvents()
+      .filter(e => new Date(e.y, e.m, e.d) < now)
+      .sort((a, b) => new Date(b.y, b.m, b.d) - new Date(a.y, a.m, a.d)) // most recent first...
+      .slice(0, 12)                                                      // ...keep the last 12...
+      .reverse();                                                        // ...then display oldest → newest
+
+    if (!past.length) {
+      list.innerHTML = "<p style='color:var(--muted);font-size:.85rem;'>No past meetings found.</p>";
+      return;
+    }
+
+    past.forEach(e => list.appendChild(buildMeetingItem(e)));
   }
 
   document.getElementById("prev-btn").addEventListener("click", () => {
